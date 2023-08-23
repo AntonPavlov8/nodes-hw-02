@@ -55,7 +55,6 @@ const usersController = {
           user.token = token;
           await user.save();
           req.session.userToken = token;
-          req.session.currentUserId = user._id;
           res.status(200).json({ email, subscription: user.subscription });
         } else {
           return res
