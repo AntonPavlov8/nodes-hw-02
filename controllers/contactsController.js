@@ -1,8 +1,9 @@
 const Contacts = require("../models/Schema.js");
-async function updateStatusContact(id, body) {
+async function updateStatusContact(id, owner, body) {
   const update = await Contacts.findOneAndUpdate(
     {
       _id: id,
+      owner: owner,
     },
     { $set: body },
     { new: true }
@@ -12,7 +13,9 @@ async function updateStatusContact(id, body) {
 const contactsController = {
   async getContacts(req, res) {
     try {
-      const data = await Contacts.find().select("-__v");
+      const data = await Contacts.find({ owner: req.user._id }).select(
+        "-__v -owner"
+      );
       res.json(data);
     } catch (err) {
       console.log(err);
@@ -22,7 +25,11 @@ const contactsController = {
   async getSingleContact(req, res) {
     const contactId = req.params.id;
     try {
-      const data = await Contacts.findOne({ _id: contactId });
+      const data = await Contacts.findOne({
+        _id: contactId,
+        owner: req.user._id,
+      }).select("-__v -owner");
+      if (!data) throw Error(data);
       res.status(200).json(data);
     } catch (err) {
       console.log(err);
@@ -31,7 +38,10 @@ const contactsController = {
   },
   async addContact(req, res) {
     try {
-      const newContact = await Contacts.create(req.body);
+      const newContact = await Contacts.create({
+        owner: req.user._id,
+        ...req.body,
+      });
       res.status(201).json(newContact);
     } catch (err) {
       console.log(err);
@@ -41,7 +51,10 @@ const contactsController = {
   async deleteContact(req, res) {
     try {
       const id = req.params.id;
-      const result = await Contacts.findOneAndDelete({ _id: id });
+      const result = await Contacts.findOneAndDelete({
+        _id: id,
+        owner: req.user._id,
+      });
       if (result) {
         res.status(200).json({ message: "Employee was deleted" });
       } else throw new Error(result);
@@ -57,7 +70,11 @@ const contactsController = {
       if (!body) {
         res.json({ message: "missing updating fields" });
       }
-      const result = await updateStatusContact(id, body);
+      const result = await updateStatusContact(
+        id,
+        (owner = req.user._id),
+        body
+      );
       if (result) {
         res.status(200).json(result);
       } else throw new Error(result);
@@ -74,7 +91,11 @@ const contactsController = {
       if (!body) {
         res.json({ message: "missing field favorite" });
       }
-      const result = await updateStatusContact(id, body);
+      const result = await updateStatusContact(
+        id,
+        (owner = req.user._id),
+        body
+      );
       if (result) {
         res.status(200).json(result);
       } else throw new Error(result);
