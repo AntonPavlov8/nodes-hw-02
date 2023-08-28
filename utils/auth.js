@@ -1,4 +1,3 @@
-const session = require("express-session");
 const jwt = require("jsonwebtoken");
 const Users = require("../models/UsersSchema");
 

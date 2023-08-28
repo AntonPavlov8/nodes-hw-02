@@ -1,4 +1,5 @@
 const Users = require("../models/UsersSchema.js");
+const { v4: uuid } = require("uuid");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const Joi = require("joi");
@@ -8,8 +9,8 @@ const jimp = require("jimp");
 const path = require("path");
 const tmpStorage = path.join(process.cwd(), "tmp");
 const imagesPath = path.join(process.cwd(), "public/avatars");
-
 var gravatar = require("gravatar");
+const sendVerifyMail = require("./sendVerifyMail.js");
 
 const validationSchema = Joi.object({
   email: Joi.string().email().required(),
@@ -24,31 +25,36 @@ const usersController = {
       const token = jwt.sign({ email }, process.env.JWT_SECRET, {
         expiresIn: "1h",
       });
-
+      const newVerificationToken = uuid();
       var url = gravatar.url(email, { s: "100", r: "x", d: "retro" }, true);
       const createUser = await Users.create({
         email: email,
         password: hashedPassword,
         avatarURL: url,
         token: token,
+        verify: false,
+        verificationToken: newVerificationToken,
       });
       req.session.userToken = token;
+      sendVerifyMail(email, (verificationToken = newVerificationToken));
       res.status(201).json(createUser);
     } catch (err) {
       console.log(err);
       res.status(409).json({ message: "Email in use" });
     }
   },
-
   async loginUser(req, res) {
     try {
       const { email, password } = req.body;
       const user = await Users.findOne({ email: email }).select(
-        "email password subscription"
+        "email password subscription verify"
       );
+      if (!user.verify) {
+        res.json({ message: "User's email is not verified" });
+      }
       const id = user._id;
       if (!user) {
-        res.json({ message: "No user found with that account" });
+        res.status(404).json({ message: "No user found with that account" });
         return;
       }
 
@@ -67,12 +73,11 @@ const usersController = {
           req.session.userToken = token;
           res.status(200).json({ email, subscription: user.subscription });
         } else {
-          return res
-            .status(401)
-            .json({ message: "Email or password is wrong" });
+          res.status(401).json({ message: "Email or password is wrong" });
         }
       });
     } catch (err) {
+      console.log(err);
       res.json({ message: err });
     }
   },
@@ -132,6 +137,36 @@ const usersController = {
         message: "Not authorized",
       });
     }
+  },
+  async verifyUserByToken(req, res) {
+    try {
+      const id = req.params.verificationToken;
+      const user = await Users.findOneAndUpdate(
+        { verificationToken: id },
+        { $set: { verificationToken: null, verify: true } },
+        { new: true }
+      );
+      if (!user) {
+        throw Error;
+      }
+      console.log(user);
+      res.status(200).json({ message: "Verification successful" });
+    } catch (err) {
+      res.status(404).json({ message: "User not found" });
+    }
+  },
+  async resendVerifyMail(req, res) {
+    const userEmail = req.body.email;
+    if (!userEmail) {
+      res.status(400).json({ message: "Missing required field email" });
+    }
+    const user = await Users.findOne({ email: req.body.email });
+    const { email, verify, verificationToken } = user;
+    if (verify) {
+      res.status(400).json({ message: "Verification has already been passed" });
+    }
+    sendVerifyMail(email, verificationToken);
+    res.status(200).json({ message: "Verification email sent" });
   },
 };
 
